@@ -332,6 +332,52 @@ type Param struct {
 	JSONName string // JSON field name (camelCase)
 }
 
+// IsByteSlice returns true if the parameter type is []byte.
+func (p Param) IsByteSlice() bool {
+	return p.Type == "[]byte"
+}
+
+// IsByteSlice returns true if the field type is []byte.
+func (f FieldDef) IsByteSlice() bool {
+	return f.Type == "[]byte"
+}
+
+// HasByteFields returns true if any method params, returns, or struct fields use []byte.
+func (s Service) HasByteFields() bool {
+	for _, m := range s.Methods {
+		for _, p := range m.Params {
+			if p.IsByteSlice() {
+				return true
+			}
+		}
+		for _, r := range m.Returns {
+			if r.IsByteSlice() {
+				return true
+			}
+		}
+	}
+	for _, st := range s.Structs {
+		for _, f := range st.Fields {
+			if f.IsByteSlice() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// HasByteFields returns true if any capability struct fields use []byte.
+func (c Capability) HasByteFields() bool {
+	for _, st := range c.Structs {
+		for _, f := range st.Fields {
+			if f.IsByteSlice() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // NewParam creates a Param with auto-generated JSON name.
 func NewParam(name, typ string) Param {
 	return Param{

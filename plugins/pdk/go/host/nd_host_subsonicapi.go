@@ -19,6 +19,11 @@ import (
 //go:wasmimport extism:host/user subsonicapi_call
 func subsonicapi_call(uint64) uint64
 
+// subsonicapi_callraw is the host function provided by Navidrome.
+//
+//go:wasmimport extism:host/user subsonicapi_callraw
+func subsonicapi_callraw(uint64) uint64
+
 type subsonicAPICallRequest struct {
 	Uri string `json:"uri"`
 }
@@ -26,6 +31,16 @@ type subsonicAPICallRequest struct {
 type subsonicAPICallResponse struct {
 	ResponseJSON string `json:"responseJson,omitempty"`
 	Error        string `json:"error,omitempty"`
+}
+
+type subsonicAPICallRawRequest struct {
+	Uri string `json:"uri"`
+}
+
+type subsonicAPICallRawResponse struct {
+	ContentType string `json:"contentType,omitempty"`
+	Data        []byte `json:"data,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // SubsonicAPICall calls the subsonicapi_call host function.
@@ -64,4 +79,41 @@ func SubsonicAPICall(uri string) (string, error) {
 	}
 
 	return response.ResponseJSON, nil
+}
+
+// SubsonicAPICallRaw calls the subsonicapi_callraw host function.
+// CallRaw executes a Subsonic API request and returns the raw binary response.
+// Designed for binary endpoints like getCoverArt and stream that return
+// non-JSON data. The data is base64-encoded over JSON on the wire.
+func SubsonicAPICallRaw(uri string) (string, []byte, error) {
+	// Marshal request to JSON
+	req := subsonicAPICallRawRequest{
+		Uri: uri,
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return "", nil, err
+	}
+	reqMem := pdk.AllocateBytes(reqBytes)
+	defer reqMem.Free()
+
+	// Call the host function
+	responsePtr := subsonicapi_callraw(reqMem.Offset())
+
+	// Read the response from memory
+	responseMem := pdk.FindMemory(responsePtr)
+	responseBytes := responseMem.ReadBytes()
+
+	// Parse the response
+	var response subsonicAPICallRawResponse
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		return "", nil, err
+	}
+
+	// Convert Error field to Go error
+	if response.Error != "" {
+		return "", nil, errors.New(response.Error)
+	}
+
+	return response.ContentType, response.Data, nil
 }

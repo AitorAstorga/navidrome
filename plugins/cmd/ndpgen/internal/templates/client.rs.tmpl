@@ -5,6 +5,7 @@
 
 use extism_pdk::*;
 use serde::{Deserialize, Serialize};
+{{- if .Service.HasByteFields}}{{template "base64_bytes_module" .}}{{- end}}
 {{- /* Generate struct definitions */ -}}
 {{- range .Service.Structs}}
 {{if .Doc}}
@@ -16,6 +17,9 @@ pub struct {{.Name}} {
 {{- range .Fields}}
 {{- if .NeedsDefault}}
     #[serde(default)]
+{{- end}}
+{{- if .IsByteSlice}}
+    #[serde(with = "base64_bytes")]
 {{- end}}
     pub {{.RustName}}: {{fieldRustType .}},
 {{- end}}
@@ -29,6 +33,9 @@ pub struct {{.Name}} {
 #[serde(rename_all = "camelCase")]
 struct {{requestType .}} {
 {{- range .Params}}
+{{- if .IsByteSlice}}
+    #[serde(with = "base64_bytes")]
+{{- end}}
     {{.RustName}}: {{rustType .}},
 {{- end}}
 }
@@ -39,6 +46,9 @@ struct {{requestType .}} {
 struct {{responseType .}} {
 {{- range .Returns}}
     #[serde(default)]
+{{- if .IsByteSlice}}
+    #[serde(with = "base64_bytes")]
+{{- end}}
     {{.RustName}}: {{rustType .}},
 {{- end}}
 {{- if .HasError}}

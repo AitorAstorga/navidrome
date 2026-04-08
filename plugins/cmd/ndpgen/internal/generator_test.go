@@ -626,6 +626,59 @@ var _ = Describe("Generator", func() {
 			Expect(codeStr).To(ContainSubstring(`response.get("floatVal", 0.0)`))
 			Expect(codeStr).To(ContainSubstring(`response.get("boolVal", False)`))
 		})
+
+		It("should not import base64 for non-byte services", func() {
+			svc := Service{
+				Name:       "Test",
+				Permission: "test",
+				Interface:  "TestService",
+				Methods: []Method{
+					{
+						Name:     "Call",
+						HasError: true,
+						Params:   []Param{NewParam("uri", "string")},
+						Returns:  []Param{NewParam("response", "string")},
+					},
+				},
+			}
+
+			code, err := GenerateClientPython(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			codeStr := string(code)
+
+			Expect(codeStr).NotTo(ContainSubstring("import base64"))
+		})
+
+		It("should generate base64 encoding/decoding for byte fields", func() {
+			svc := Service{
+				Name:       "Codec",
+				Permission: "codec",
+				Interface:  "CodecService",
+				Methods: []Method{
+					{
+						Name:     "Encode",
+						HasError: true,
+						Params:   []Param{NewParam("data", "[]byte")},
+						Returns:  []Param{NewParam("result", "[]byte")},
+					},
+				},
+			}
+
+			code, err := GenerateClientPython(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			codeStr := string(code)
+
+			// Should import base64
+			Expect(codeStr).To(ContainSubstring("import base64"))
+
+			// Should base64-encode byte params in request
+			Expect(codeStr).To(ContainSubstring(`base64.b64encode(data).decode("ascii")`))
+
+			// Should base64-decode byte returns in response
+			Expect(codeStr).To(ContainSubstring(`base64.b64decode(response.get("result", ""))`))
+		})
 	})
 
 	Describe("GenerateGoDoc", func() {
@@ -782,6 +835,7 @@ var _ = Describe("Generator", func() {
 			// Check for PDK import
 			Expect(codeStr).To(ContainSubstring("github.com/navidrome/navidrome/plugins/pdk/go/pdk"))
 		})
+
 	})
 
 	Describe("GenerateClientGoStub", func() {
@@ -1549,6 +1603,58 @@ var _ = Describe("Rust Generation", func() {
 			// Should generate simple bool return, not Option
 			Expect(codeStr).To(ContainSubstring("Result<bool, Error>"))
 			Expect(codeStr).NotTo(ContainSubstring("Option<bool>"))
+		})
+
+		It("should generate base64 serde for Vec<u8> fields", func() {
+			svc := Service{
+				Name:       "Codec",
+				Permission: "codec",
+				Interface:  "CodecService",
+				Methods: []Method{
+					{
+						Name:     "Encode",
+						HasError: true,
+						Params:   []Param{NewParam("data", "[]byte")},
+						Returns:  []Param{NewParam("result", "[]byte")},
+					},
+				},
+			}
+
+			code, err := GenerateClientRust(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			codeStr := string(code)
+
+			// Should generate base64_bytes serde module
+			Expect(codeStr).To(ContainSubstring("mod base64_bytes"))
+			Expect(codeStr).To(ContainSubstring("use base64::Engine as _"))
+
+			// Should add serde(with = "base64_bytes") on Vec<u8> fields
+			Expect(codeStr).To(ContainSubstring(`#[serde(with = "base64_bytes")]`))
+		})
+
+		It("should not generate base64 module when no byte fields", func() {
+			svc := Service{
+				Name:       "Test",
+				Permission: "test",
+				Interface:  "TestService",
+				Methods: []Method{
+					{
+						Name:     "Call",
+						HasError: true,
+						Params:   []Param{NewParam("uri", "string")},
+						Returns:  []Param{NewParam("response", "string")},
+					},
+				},
+			}
+
+			code, err := GenerateClientRust(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			codeStr := string(code)
+
+			Expect(codeStr).NotTo(ContainSubstring("mod base64_bytes"))
+			Expect(codeStr).NotTo(ContainSubstring("use base64"))
 		})
 	})
 })

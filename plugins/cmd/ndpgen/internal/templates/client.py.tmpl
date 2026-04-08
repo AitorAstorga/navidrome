@@ -12,6 +12,9 @@ from typing import Any
 
 import extism
 import json
+{{- if .Service.HasByteFields}}
+import base64
+{{- end}}
 
 
 class HostFunctionError(Exception):
@@ -69,7 +72,11 @@ def {{pythonFunc .}}({{range $i, $p := .Params}}{{if $i}}, {{end}}{{$p.PythonNam
 {{- if .HasParams}}
     request = {
 {{- range .Params}}
+{{- if .IsByteSlice}}
+        "{{.JSONName}}": base64.b64encode({{.PythonName}}).decode("ascii"),
+{{- else}}
         "{{.JSONName}}": {{.PythonName}},
+{{- end}}
 {{- end}}
     }
     request_bytes = json.dumps(request).encode("utf-8")
@@ -87,10 +94,18 @@ def {{pythonFunc .}}({{range $i, $p := .Params}}{{if $i}}, {{end}}{{$p.PythonNam
 {{- if .NeedsResultClass}}
     return {{pythonResultType .}}(
 {{- range .Returns}}
+{{- if .IsByteSlice}}
+        {{.PythonName}}=base64.b64decode(response.get("{{.JSONName}}", "")),
+{{- else}}
         {{.PythonName}}=response.get("{{.JSONName}}"{{pythonDefault .}}),
+{{- end}}
 {{- end}}
     )
 {{- else if .HasReturns}}
+{{- if (index .Returns 0).IsByteSlice}}
+    return base64.b64decode(response.get("{{(index .Returns 0).JSONName}}", ""))
+{{- else}}
     return response.get("{{(index .Returns 0).JSONName}}"{{pythonDefault (index .Returns 0)}})
+{{- end}}
 {{- end}}
 {{- end}}

@@ -20,11 +20,24 @@ type SubsonicAPICallResponse struct {
 	Error        string `json:"error,omitempty"`
 }
 
+// SubsonicAPICallRawRequest is the request type for SubsonicAPI.CallRaw.
+type SubsonicAPICallRawRequest struct {
+	Uri string `json:"uri"`
+}
+
+// SubsonicAPICallRawResponse is the response type for SubsonicAPI.CallRaw.
+type SubsonicAPICallRawResponse struct {
+	ContentType string `json:"contentType,omitempty"`
+	Data        []byte `json:"data,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 // RegisterSubsonicAPIHostFunctions registers SubsonicAPI service host functions.
 // The returned host functions should be added to the plugin's configuration.
 func RegisterSubsonicAPIHostFunctions(service SubsonicAPIService) []extism.HostFunction {
 	return []extism.HostFunction{
 		newSubsonicAPICallHostFunction(service),
+		newSubsonicAPICallRawHostFunction(service),
 	}
 }
 
@@ -54,6 +67,41 @@ func newSubsonicAPICallHostFunction(service SubsonicAPIService) extism.HostFunct
 			// Write JSON response to plugin memory
 			resp := SubsonicAPICallResponse{
 				ResponseJSON: responsejson,
+			}
+			subsonicapiWriteResponse(p, stack, resp)
+		},
+		[]extism.ValueType{extism.ValueTypePTR},
+		[]extism.ValueType{extism.ValueTypePTR},
+	)
+}
+
+func newSubsonicAPICallRawHostFunction(service SubsonicAPIService) extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"subsonicapi_callraw",
+		func(ctx context.Context, p *extism.CurrentPlugin, stack []uint64) {
+			// Read JSON request from plugin memory
+			reqBytes, err := p.ReadBytes(stack[0])
+			if err != nil {
+				subsonicapiWriteError(p, stack, err)
+				return
+			}
+			var req SubsonicAPICallRawRequest
+			if err := json.Unmarshal(reqBytes, &req); err != nil {
+				subsonicapiWriteError(p, stack, err)
+				return
+			}
+
+			// Call the service method
+			contenttype, data, svcErr := service.CallRaw(ctx, req.Uri)
+			if svcErr != nil {
+				subsonicapiWriteError(p, stack, svcErr)
+				return
+			}
+
+			// Write JSON response to plugin memory
+			resp := SubsonicAPICallRawResponse{
+				ContentType: contenttype,
+				Data:        data,
 			}
 			subsonicapiWriteResponse(p, stack, resp)
 		},

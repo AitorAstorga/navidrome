@@ -12,6 +12,7 @@ from typing import Any
 
 import extism
 import json
+import base64
 
 
 class HostFunctionError(Exception):
@@ -23,6 +24,19 @@ class HostFunctionError(Exception):
 def _subsonicapi_call(offset: int) -> int:
     """Raw host function - do not call directly."""
     ...
+
+
+@extism.import_fn("extism:host/user", "subsonicapi_callraw")
+def _subsonicapi_callraw(offset: int) -> int:
+    """Raw host function - do not call directly."""
+    ...
+
+
+@dataclass
+class SubsonicAPICallRawResult:
+    """Result type for subsonicapi_call_raw."""
+    content_type: str
+    data: bytes
 
 
 def subsonicapi_call(uri: str) -> str:
@@ -53,3 +67,35 @@ e.g., "getAlbumList2?type=random&size=10". The response is returned as raw JSON.
         raise HostFunctionError(response["error"])
 
     return response.get("responseJson", "")
+
+
+def subsonicapi_call_raw(uri: str) -> SubsonicAPICallRawResult:
+    """CallRaw executes a Subsonic API request and returns the raw binary response.
+Designed for binary endpoints like getCoverArt and stream that return
+non-JSON data. The data is base64-encoded over JSON on the wire.
+
+    Args:
+        uri: str parameter.
+
+    Returns:
+        SubsonicAPICallRawResult containing content_type, data,.
+
+    Raises:
+        HostFunctionError: If the host function returns an error.
+    """
+    request = {
+        "uri": uri,
+    }
+    request_bytes = json.dumps(request).encode("utf-8")
+    request_mem = extism.memory.alloc(request_bytes)
+    response_offset = _subsonicapi_callraw(request_mem.offset)
+    response_mem = extism.memory.find(response_offset)
+    response = json.loads(extism.memory.string(response_mem))
+
+    if response.get("error"):
+        raise HostFunctionError(response["error"])
+
+    return SubsonicAPICallRawResult(
+        content_type=response.get("contentType", ""),
+        data=base64.b64decode(response.get("data", "")),
+    )

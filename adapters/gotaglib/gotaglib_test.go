@@ -127,6 +127,17 @@ var _ = Describe("Extractor", func() {
 				Expect(m.Tags).To(HaveKeyWithValue("albumartist", []string{"Album Artist"}))
 				Expect(m.Tags).To(HaveKeyWithValue("genre", []string{"Rock"}))
 				Expect(m.Tags).To(HaveKeyWithValue("date", []string{"2014"}))
+				// Still as of TagLib v2.2.1, TagLib only maps values in ID3, MP4, and ASF tags
+				// to `originaldate`.
+				if strings.HasSuffix(file, ".mp3") || strings.HasSuffix(file, ".wav") || strings.HasSuffix(file, ".aiff") || strings.HasSuffix(file, ".m4a") || strings.HasSuffix(file, ".wma") {
+					Expect(m.Tags).To(HaveKeyWithValue("originaldate", []string{"1996-11-21"}))
+				}
+				// MP3Tag sets `ORIGYEAR` in several formats for which it has no built-in mapping
+				// for original release dates.
+				Expect(m.Tags).To(Or(
+					HaveKeyWithValue("origyear", []string{"1998-07-28"}),
+					HaveKeyWithValue("----:com.apple.itunes:origyear", []string{"1998-07-28"}),
+				))
 
 				Expect(m.Tags).To(HaveKeyWithValue("bpm", []string{"123"}))
 				Expect(m.Tags).To(Or(
@@ -172,6 +183,9 @@ var _ = Describe("Extractor", func() {
 			Entry("correctly parses m4a (aac) gain tags", "01 Invisible (RED) Edit Version.m4a", "1.04s", 2, 44100, 16, "0.37", "0.48", "0.37", "0.48", false, true),
 			Entry("correctly parses m4a (aac) gain tags (uppercase)", "test.m4a", "1.04s", 2, 44100, 16, "0.37", "0.48", "0.37", "0.48", false, true),
 			Entry("correctly parses ogg (vorbis) tags", "test.ogg", "1.04s", 2, 8000, 0, "+7.64 dB", "0.11772506", "+7.64 dB", "0.11772506", false, true),
+
+			// ffmpeg -f lavfi -i "sine=frequency=1100:duration=1" -c:a libopus test.opus (tags added via mutagen)
+			Entry("correctly parses opus tags (#4998)", "test.opus", "1s", 1, 48000, 0, "+5.12 dB", "0.11345678", "+5.12 dB", "0.11345678", false, true),
 
 			// ffmpeg -f lavfi -i "sine=frequency=900:duration=1" test.wma
 			// Weird note: for the tag parsing to work, the lyrics are actually stored in the reverse order

@@ -68,8 +68,8 @@ func doLogin(ds model.DataStore, username string, password string, w http.Respon
 	_ = rest.RespondWithJSON(w, http.StatusOK, payload)
 }
 
-func buildAuthPayload(user *model.User) map[string]interface{} {
-	payload := map[string]interface{}{
+func buildAuthPayload(user *model.User) map[string]any {
+	payload := map[string]any{
 		"id":       user.ID,
 		"name":     user.Name,
 		"username": user.UserName,
@@ -185,12 +185,16 @@ func tokenFromHeader(r *http.Request) string {
 }
 
 func UsernameFromToken(r *http.Request) string {
-	token, claims, err := jwtauth.FromContext(r.Context())
-	if err != nil || claims["sub"] == nil || token == nil {
+	token, _, err := jwtauth.FromContext(r.Context())
+	if err != nil || token == nil {
 		return ""
 	}
-	log.Trace(r, "Found username in JWT token", "username", token.Subject())
-	return token.Subject()
+	sub, _ := token.Subject()
+	if sub == "" {
+		return ""
+	}
+	log.Trace(r, "Found username in JWT token", "username", sub)
+	return sub
 }
 
 func UsernameFromExtAuthHeader(r *http.Request) string {
@@ -288,7 +292,7 @@ func JWTRefresher(next http.Handler) http.Handler {
 	})
 }
 
-func handleLoginFromHeaders(ds model.DataStore, r *http.Request) map[string]interface{} {
+func handleLoginFromHeaders(ds model.DataStore, r *http.Request) map[string]any {
 	username := UsernameFromConfig(r)
 	if username == "" {
 		username = UsernameFromExtAuthHeader(r)

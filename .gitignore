@@ -20,6 +20,7 @@ cache/*
 coverage.out
 dist
 music
+music.old
 *.db*
 .gitinfo
 docker-compose.yml
@@ -37,3 +38,4 @@ AGENTS.md
 *.ndp
 openspec/
 go.work*
+.worktrees/

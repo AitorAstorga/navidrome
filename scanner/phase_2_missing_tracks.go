@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -113,6 +114,10 @@ func (p *phaseMissingTracks) stages() []ppl.Stage[*missingTracks] {
 
 func (p *phaseMissingTracks) processMissingTracks(in *missingTracks) (*missingTracks, error) {
 	hasMatches := false
+	// Track which matched entries have already been consumed, so each matched track
+	// is only used once. Without this, the same matched track could be paired with
+	// multiple missing tracks, creating duplicate records with the same path.
+	usedMatched := make(map[string]bool, len(in.matched))
 
 	for _, ms := range in.missing {
 		var exactMatch model.MediaFile
@@ -120,6 +125,9 @@ func (p *phaseMissingTracks) processMissingTracks(in *missingTracks) (*missingTr
 
 		// Identify exact and equivalent matches
 		for _, mt := range in.matched {
+			if usedMatched[mt.ID] {
+				continue
+			}
 			if ms.Equals(mt) {
 				exactMatch = mt
 				break // Prioritize exact match
@@ -137,13 +145,14 @@ func (p *phaseMissingTracks) processMissingTracks(in *missingTracks) (*missingTr
 				log.Error(p.ctx, "Scanner: Error moving matched track", "missing", ms.Path, "movedTo", exactMatch.Path, "lib", in.lib.Name, err)
 				return nil, err
 			}
+			usedMatched[exactMatch.ID] = true
 			p.totalMatched.Add(1)
 			hasMatches = true
 			continue
 		}
 
 		// If there is only one missing and one matched track, consider them equivalent (same PID)
-		if len(in.missing) == 1 && len(in.matched) == 1 {
+		if len(in.missing) == 1 && len(in.matched) == 1 && !usedMatched[in.matched[0].ID] {
 			singleMatch := in.matched[0]
 			log.Debug(p.ctx, "Scanner: Found track with same persistent ID in a new place", "missing", ms.Path, "movedTo", singleMatch.Path, "lib", in.lib.Name)
 			err := p.moveMatched(singleMatch, ms)
@@ -151,6 +160,7 @@ func (p *phaseMissingTracks) processMissingTracks(in *missingTracks) (*missingTr
 				log.Error(p.ctx, "Scanner: Error updating matched track", "missing", ms.Path, "movedTo", singleMatch.Path, "lib", in.lib.Name, err)
 				return nil, err
 			}
+			usedMatched[singleMatch.ID] = true
 			p.totalMatched.Add(1)
 			hasMatches = true
 			continue
@@ -164,6 +174,7 @@ func (p *phaseMissingTracks) processMissingTracks(in *missingTracks) (*missingTr
 				log.Error(p.ctx, "Scanner: Error updating matched track", "missing", ms.Path, "movedTo", equivalentMatch.Path, "lib", in.lib.Name, err)
 				return nil, err
 			}
+			usedMatched[equivalentMatch.ID] = true
 			p.totalMatched.Add(1)
 			hasMatches = true
 		}
@@ -267,6 +278,10 @@ func (p *phaseMissingTracks) moveMatched(target, missing model.MediaFile) error 
 		oldAlbumID := missing.AlbumID
 		newAlbumID := target.AlbumID
 
+		// Preserve the original created_at from the missing file, so moved tracks
+		// don't appear in "Recently Added"
+		target.CreatedAt = missing.CreatedAt
+
 		// Update the target media file with the missing file's ID. This effectively "moves" the track
 		// to the new location while keeping its annotations and references intact.
 		target.ID = missing.ID
@@ -296,6 +311,14 @@ func (p *phaseMissingTracks) moveMatched(target, missing model.MediaFile) error 
 					log.Debug(p.ctx, "Scanner: Reassigning album annotations", "from", oldAlbumID, "to", newAlbumID)
 					if err := tx.Album(p.ctx).ReassignAnnotation(oldAlbumID, newAlbumID); err != nil {
 						log.Warn(p.ctx, "Scanner: Could not reassign album annotations", "from", oldAlbumID, "to", newAlbumID, err)
+					}
+
+					// Keep created_at field from previous instance of the album, so moved albums
+					// don't appear in "Recently Added"
+					if err := tx.Album(p.ctx).CopyAttributes(oldAlbumID, newAlbumID, "created_at"); err != nil {
+						if !errors.Is(err, model.ErrNotFound) {
+							log.Warn(p.ctx, "Scanner: Could not copy album created_at", "from", oldAlbumID, "to", newAlbumID, err)
+						}
 					}
 
 					// Note: RefreshPlayCounts will be called in later phases, so we don't need to call it here

@@ -109,6 +109,17 @@ func (m *MockMediaFileRepo) Put(mf *model.MediaFile) error {
 	return nil
 }
 
+func (m *MockMediaFileRepo) UpdateProbeData(id string, data string) error {
+	if m.Err {
+		return errors.New("error")
+	}
+	if d, ok := m.Data[id]; ok {
+		d.ProbeData = data
+		return nil
+	}
+	return model.ErrNotFound
+}
+
 func (m *MockMediaFileRepo) Delete(id string) error {
 	if m.Err {
 		return errors.New("error")
@@ -218,7 +229,7 @@ func (m *MockMediaFileRepo) Count(...rest.QueryOptions) (int64, error) {
 	return m.CountAll()
 }
 
-func (m *MockMediaFileRepo) Read(id string) (interface{}, error) {
+func (m *MockMediaFileRepo) Read(id string) (any, error) {
 	mf, err := m.Get(id)
 	if errors.Is(err, model.ErrNotFound) {
 		return nil, rest.ErrNotFound
@@ -226,7 +237,7 @@ func (m *MockMediaFileRepo) Read(id string) (interface{}, error) {
 	return mf, err
 }
 
-func (m *MockMediaFileRepo) ReadAll(...rest.QueryOptions) (interface{}, error) {
+func (m *MockMediaFileRepo) ReadAll(...rest.QueryOptions) (any, error) {
 	return m.GetAll()
 }
 
@@ -234,11 +245,11 @@ func (m *MockMediaFileRepo) EntityName() string {
 	return "mediafile"
 }
 
-func (m *MockMediaFileRepo) NewInstance() interface{} {
+func (m *MockMediaFileRepo) NewInstance() any {
 	return &model.MediaFile{}
 }
 
-func (m *MockMediaFileRepo) Search(q string, offset int, size int, options ...model.QueryOptions) (model.MediaFiles, error) {
+func (m *MockMediaFileRepo) Search(q string, options ...model.QueryOptions) (model.MediaFiles, error) {
 	if len(options) > 0 {
 		m.Options = options[0]
 	}

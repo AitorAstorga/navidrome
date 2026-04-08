@@ -6,19 +6,23 @@
 // efficient access to format-specific tags (ID3v2 frames, MP4 atoms, ASF attributes)
 // through a single file open operation.
 //
-// This extractor is registered under the name "gotaglib". It only works with a filesystem
+// This extractor is registered under the name "taglib". It only works with a filesystem
 // (fs.FS) and does not support direct local file paths. Files returned by the filesystem
 // must implement io.ReadSeeker for go-taglib to read them.
 package gotaglib
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/storage/local"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model/metadata"
 	"go.senan.xyz/taglib"
 )
@@ -40,12 +44,37 @@ func (e extractor) Parse(files ...string) (map[string]metadata.Info, error) {
 }
 
 func (e extractor) Version() string {
-	return "go-taglib (TagLib 2.1.1 WASM)"
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, dep := range bi.Deps {
+			if dep.Path == "go.senan.xyz/taglib" {
+				if dep.Replace != nil {
+					return dep.Replace.Version
+				}
+				return dep.Version
+			}
+		}
+	}
+	return "unknown"
 }
 
-func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
+func (e extractor) extractMetadata(filePath string) (info *metadata.Info, err error) {
+	// Recover from panics in the WASM runtime that can occur during any taglib
+	// operation (opening, reading tags, or reading properties). This catches crashes
+	// from malformed files or WASM runtime issues (e.g., wazero mmap failures on
+	// hardened systems with MemoryDenyWriteExecute=true).
+	debug.SetPanicOnFault(true)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("gotaglib: WASM runtime panic reading file. Skipping", "filePath", filePath, "panic", r)
+			debug.PrintStack()
+			err = fmt.Errorf("WASM runtime panic: %v", r)
+		}
+	}()
+
 	f, close, err := e.openFile(filePath)
 	if err != nil {
+		log.Warn("gotaglib: Error reading metadata from file. Skipping", "filePath", filePath, err)
 		return nil, err
 	}
 	defer close()
@@ -61,6 +90,7 @@ func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
 		Channels:   int(props.Channels),
 		SampleRate: int(props.SampleRate),
 		BitDepth:   int(props.BitsPerSample),
+		Codec:      props.Codec,
 	}
 
 	// Convert normalized tags to lowercase keys (go-taglib returns UPPERCASE keys)
@@ -94,7 +124,7 @@ func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
 
 // openFile opens the file at filePath using the extractor's filesystem.
 // It returns a TagLib File handle and a cleanup function to close resources.
-func (e extractor) openFile(filePath string) (*taglib.File, func(), error) {
+func (e extractor) openFile(filePath string) (f *taglib.File, closeFunc func(), err error) {
 	// Open the file from the filesystem
 	file, err := e.fs.Open(filePath)
 	if err != nil {
@@ -105,12 +135,17 @@ func (e extractor) openFile(filePath string) (*taglib.File, func(), error) {
 		file.Close()
 		return nil, nil, errors.New("file is not seekable")
 	}
-	f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast))
+	// WithFilename provides a format detection hint via the file extension,
+	// since OpenStream alone relies on content-sniffing which fails for some files.
+	f, err = taglib.OpenStream(rs,
+		taglib.WithReadStyle(taglib.ReadStyleFast),
+		taglib.WithFilename(filePath),
+	)
 	if err != nil {
 		file.Close()
 		return nil, nil, err
 	}
-	closeFunc := func() {
+	closeFunc = func() {
 		f.Close()
 		file.Close()
 	}
@@ -241,7 +276,7 @@ func parseTIPL(tags map[string][]string) {
 	}
 	var currentRole string
 	var currentValue []string
-	for _, part := range strings.Split(tipl[0], " ") {
+	for part := range strings.SplitSeq(tipl[0], " ") {
 		if _, ok := tiplMapping[part]; ok {
 			addRole(currentRole, currentValue)
 			currentRole = part
@@ -259,5 +294,8 @@ var _ local.Extractor = (*extractor)(nil)
 func init() {
 	local.RegisterExtractor("taglib", func(fsys fs.FS, baseDir string) local.Extractor {
 		return &extractor{fsys}
+	})
+	conf.AddHook(func() {
+		log.Debug("go-taglib version", "version", extractor{}.Version())
 	})
 }

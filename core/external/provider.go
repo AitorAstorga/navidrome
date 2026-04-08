@@ -93,7 +93,7 @@ func NewProvider(ds model.DataStore, agents Agents) Provider {
 }
 
 func (e *provider) getAlbum(ctx context.Context, id string) (auxAlbum, error) {
-	var entity interface{}
+	var entity any
 	entity, err := model.GetEntityByID(ctx, e.ds, id)
 	if err != nil {
 		return auxAlbum{}, err
@@ -187,7 +187,7 @@ func (e *provider) populateAlbumInfo(ctx context.Context, album auxAlbum) (auxAl
 }
 
 func (e *provider) getArtist(ctx context.Context, id string) (auxArtist, error) {
-	var entity interface{}
+	var entity any
 	entity, err := model.GetEntityByID(ctx, e.ds, id)
 	if err != nil {
 		return auxArtist{}, err
@@ -374,13 +374,25 @@ func (e *provider) ArtistImage(ctx context.Context, id string) (*url.URL, error)
 		return nil, err
 	}
 
-	e.callGetImage(ctx, e.ag, &artist)
-	if utils.IsCtxDone(ctx) {
-		log.Warn(ctx, "ArtistImage call canceled", ctx.Err())
-		return nil, ctx.Err()
+	imageUrl := artist.ArtistImageUrl()
+	if imageUrl == "" {
+		// No cached URL — must fetch from external source synchronously
+		e.callGetImage(ctx, e.ag, &artist)
+		if utils.IsCtxDone(ctx) {
+			log.Warn(ctx, "ArtistImage call canceled", ctx.Err())
+			return nil, ctx.Err()
+		}
+		imageUrl = artist.ArtistImageUrl()
+	} else {
+		// If cached info is expired, enqueue a background refresh so that config changes
+		// (e.g. disabling an agent) take effect without waiting for a full artist info refresh.
+		updatedAt := V(artist.ExternalInfoUpdatedAt)
+		if !updatedAt.IsZero() && time.Since(updatedAt) > conf.Server.DevArtistInfoTimeToLive {
+			log.Debug(ctx, "Artist image info expired, enqueuing background refresh", "artist", artist.Name(), "updatedAt", updatedAt)
+			e.artistQueue.enqueue(&artist)
+		}
 	}
 
-	imageUrl := artist.ArtistImageUrl()
 	if imageUrl == "" {
 		return nil, model.ErrNotFound
 	}

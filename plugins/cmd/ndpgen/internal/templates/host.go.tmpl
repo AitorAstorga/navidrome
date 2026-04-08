@@ -72,14 +72,6 @@ func new{{$.Service.Name}}{{.Name}}HostFunction(service {{$.Service.Interface}})
 {{- else}}
 			{{range $i, $r := .Returns}}{{if $i}}, {{end}}{{lower $r.Name}}{{end}} := service.{{.Name}}(ctx{{range .Params}}, req.{{title .Name}}{{end}})
 {{- end}}
-{{- else if .HasError}}
-			if svcErr := service.{{.Name}}(ctx{{range .Params}}, req.{{title .Name}}{{end}}); svcErr != nil {
-				{{$.Service.Name | lower}}WriteError(p, stack, svcErr)
-				return
-			}
-{{- else}}
-			service.{{.Name}}(ctx{{range .Params}}, req.{{title .Name}}{{end}})
-{{- end}}
 
 			// Write JSON response to plugin memory
 			resp := {{responseType .}}{
@@ -88,6 +80,22 @@ func new{{$.Service.Name}}{{.Name}}HostFunction(service {{$.Service.Interface}})
 {{- end}}
 			}
 			{{$.Service.Name | lower}}WriteResponse(p, stack, resp)
+{{- else if .HasError}}
+			if svcErr := service.{{.Name}}(ctx{{range .Params}}, req.{{title .Name}}{{end}}); svcErr != nil {
+				{{$.Service.Name | lower}}WriteError(p, stack, svcErr)
+				return
+			}
+
+			// Write JSON response to plugin memory
+			resp := {{responseType .}}{}
+			{{$.Service.Name | lower}}WriteResponse(p, stack, resp)
+{{- else}}
+			service.{{.Name}}(ctx{{range .Params}}, req.{{title .Name}}{{end}})
+
+			// Write JSON response to plugin memory
+			resp := {{responseType .}}{}
+			{{$.Service.Name | lower}}WriteResponse(p, stack, resp)
+{{- end}}
 		},
 		[]extism.ValueType{extism.ValueTypePTR},
 		[]extism.ValueType{extism.ValueTypePTR},

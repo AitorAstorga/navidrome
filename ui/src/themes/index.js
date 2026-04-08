@@ -9,7 +9,9 @@ import ElectricPurpleTheme from './electricPurple'
 import NordTheme from './nord'
 import GruvboxDarkTheme from './gruvboxDark'
 import CatppuccinMacchiatoTheme from './catppuccinMacchiato'
+import DraculaTheme from './dracula'
 import NuclearTheme from './nuclear'
+import NutballTheme from './nutball'
 import AmusicTheme from './amusic'
 import SquiddiesGlassTheme from './SquiddiesGlass'
 import NautilineTheme from './nautiline'
@@ -22,6 +24,7 @@ export default {
   // New themes should be added here, in alphabetic order
   AmusicTheme,
   CatppuccinMacchiatoTheme,
+  DraculaTheme,
   ElectricPurpleTheme,
   ExtraDarkTheme,
   GreenTheme,
@@ -31,6 +34,7 @@ export default {
   NautilineTheme,
   NordTheme,
   NuclearTheme,
+  NutballTheme,
   SpotifyTheme,
   SquiddiesGlassTheme,
 }
